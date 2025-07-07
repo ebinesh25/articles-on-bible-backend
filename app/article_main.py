@@ -60,10 +60,48 @@ def article_helper(article) -> dict:
 
 def article_summary_helper(article) -> dict:
     """Convert MongoDB document to summary response"""
+    
+    def extract_excerpt(content_blocks, max_length=150):
+        """Extract excerpt from content blocks"""
+        if not content_blocks:
+            return ""
+        
+        # Find the first mainText or reflection block
+        for block in content_blocks:
+            if block.get("type") in ["mainText", "reflection"]:
+                text = block.get("value", "")
+                if len(text) <= max_length:
+                    return text
+                else:
+                    # Truncate at word boundary
+                    words = text[:max_length].split()
+                    if len(words) > 1:
+                        words = words[:-1]  # Remove potentially cut-off word
+                    return " ".join(words) + "..."
+        
+        # If no mainText/reflection found, use first block
+        if content_blocks:
+            text = content_blocks[0].get("value", "")
+            if len(text) <= max_length:
+                return text
+            else:
+                words = text[:max_length].split()
+                if len(words) > 1:
+                    words = words[:-1]
+                return " ".join(words) + "..."
+        
+        return ""
+    
+    content = article.get("content", {"tamil": [], "english": []})
+    
     return {
         "id": article["id"],
         "title": article["title"],
         "theme": article["theme"],
+        "excerpt": {
+            "tamil": extract_excerpt(content.get("tamil", [])),
+            "english": extract_excerpt(content.get("english", []))
+        },
         "created_at": article.get("created_at", datetime.utcnow())
     }
 

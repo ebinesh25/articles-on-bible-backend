@@ -61,6 +61,7 @@ class ArticleSummary(BaseModel):
     id: str
     title: Title
     theme: Theme
+    excerpt: Title  # Excerpt in both languages
     created_at: datetime
 
 # Search and filter models
