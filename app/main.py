@@ -8,7 +8,7 @@ from bson import ObjectId
 app = FastAPI(title="FastAPI MongoDB Example", version="1.0.0")
 
 # MongoDB connection
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://admin:password123@localhost:27017/fastapi_db?authSource=admin")
+MONGODB_URL = os.getenv("MONGODB_URL")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "fastapi_db")
 
 client = AsyncIOMotorClient(MONGODB_URL)
