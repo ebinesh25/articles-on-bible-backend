@@ -77,7 +77,3 @@ class PaginationParams(BaseModel):
 class ArticleListResponse(BaseModel):
     articles: List[ArticleSummary]
     total: int
-    skip: int
-    limit: int
-    has_next: bool
-    has_previous: bool

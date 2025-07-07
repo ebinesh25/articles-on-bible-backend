@@ -2,10 +2,9 @@ from fastapi import FastAPI, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from typing import List, Optional
+from contextlib import asynccontextmanager
 import os
 from bson import ObjectId
-
-app = FastAPI(title="FastAPI MongoDB Example", version="1.0.0")
 
 # MongoDB connection
 MONGODB_URL = os.getenv("MONGODB_URL")
@@ -14,6 +13,24 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "fastapi_db")
 client = AsyncIOMotorClient(MONGODB_URL)
 database = client[DATABASE_NAME]
 collection = database["items"]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        await client.admin.command('ping')
+        print("Successfully connected to MongoDB!")
+    except Exception as e:
+        print(f"Failed to connect to MongoDB: {e}")
+    yield
+    # Shutdown
+    client.close()
+
+app = FastAPI(
+    title="FastAPI MongoDB Example", 
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Pydantic models
 class Item(BaseModel):
@@ -39,15 +56,6 @@ def item_helper(item) -> dict:
         "quantity": item["quantity"]
     }
 
-@app.on_event("startup")
-async def startup_event():
-    """Test database connection on startup"""
-    try:
-        await client.admin.command('ping')
-        print("Successfully connected to MongoDB!")
-    except Exception as e:
-        print(f"Failed to connect to MongoDB: {e}")
-
 @app.get("/")
 async def root():
     return {"message": "FastAPI with MongoDB is running!"}
@@ -62,7 +70,7 @@ async def health_check():
 
 @app.post("/items/", response_model=ItemResponse)
 async def create_item(item: Item):
-    item_dict = item.dict()
+    item_dict = item.model_dump()
     result = await collection.insert_one(item_dict)
     new_item = await collection.find_one({"_id": result.inserted_id})
     return item_helper(new_item)
@@ -87,7 +95,7 @@ async def get_item(item_id: str):
 @app.put("/items/{item_id}", response_model=ItemResponse)
 async def update_item(item_id: str, item: Item):
     try:
-        item_dict = item.dict()
+        item_dict = item.model_dump()
         result = await collection.update_one(
             {"_id": ObjectId(item_id)}, 
             {"$set": item_dict}

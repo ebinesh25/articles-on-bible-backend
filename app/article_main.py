@@ -155,10 +155,129 @@ async def health_check():
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
 
 # Article endpoints
+@app.post("/articles/", response_model=ArticleResponse)
+async def create_article(article: Article):
+    """Create a new article"""
+    collection = get_collection(ARTICLES_COLLECTION)
+    
+    # Check if article with this ID already exists
+    existing_article = await collection.find_one({"id": article.id})
+    if existing_article:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Article with id '{article.id}' already exists"
+        )
+    
+    # Validate ID format (basic validation - not empty and reasonable length)
+    if not article.id or len(article.id.strip()) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Article ID cannot be empty"
+        )
+    
+    if len(article.id) > 100:  # Reasonable length limit
+        raise HTTPException(
+            status_code=400,
+            detail="Article ID is too long (max 100 characters)"
+        )
+    
+    # Prepare article for insertion
+    current_time = datetime.utcnow()
+    article_dict = article.model_dump()
+    article_dict["created_at"] = current_time
+    article_dict["updated_at"] = current_time
+    
+    try:
+        # Insert the article
+        result = await collection.insert_one(article_dict)
+        
+        # Retrieve the inserted article
+        new_article = await collection.find_one({"_id": result.inserted_id})
+        
+        logger.info(f"Created new article with id: {article.id}")
+        return article_helper(new_article)
+        
+    except Exception as e:
+        logger.error(f"Error creating article: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating article: {str(e)}"
+        )
+
+@app.put("/articles/{article_id}", response_model=ArticleResponse)
+async def update_article(article_id: str, article: Article):
+    """Update an existing article"""
+    collection = get_collection(ARTICLES_COLLECTION)
+    
+    # Check if article exists
+    existing_article = await collection.find_one({"id": article_id})
+    if not existing_article:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Article with id '{article_id}' not found"
+        )
+    
+    # If the article ID in the body is different from the URL parameter, check for conflicts
+    if article.id != article_id:
+        # Check if the new ID already exists (and it's not the same article)
+        id_conflict = await collection.find_one({"id": article.id})
+        if id_conflict and id_conflict["id"] != article_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Article with id '{article.id}' already exists"
+            )
+    
+    # Validate ID format
+    if not article.id or len(article.id.strip()) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Article ID cannot be empty"
+        )
+    
+    if len(article.id) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Article ID is too long (max 100 characters)"
+        )
+    
+    # Prepare update data
+    current_time = datetime.utcnow()
+    article_dict = article.model_dump()
+    article_dict["updated_at"] = current_time
+    article_dict["created_at"] = existing_article.get("created_at", current_time)  # Preserve original created_at
+    
+    try:
+        # Update the article
+        result = await collection.replace_one(
+            {"id": article_id},
+            article_dict
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Article with id '{article_id}' not found"
+            )
+        
+        # Retrieve the updated article
+        updated_article = await collection.find_one({"id": article.id})
+        
+        logger.info(f"Updated article with id: {article_id} -> {article.id}")
+        return article_helper(updated_article)
+        
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except Exception as e:
+        logger.error(f"Error updating article: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error updating article: {str(e)}"
+        )
+
 @app.get("/articles/", response_model=ArticleListResponse)
 async def get_articles(
-    skip: int = Query(0, ge=0, description="Number of articles to skip"),
-    limit: int = Query(10, ge=1, le=50, description="Number of articles to return"),
+    # skip: int = Query(0, ge=0, description="Number of articles to skip"),
+    # limit: int = Query(10, ge=1, le=50, description="Number of articles to return"),
     theme: Optional[Theme] = Query(None, description="Filter by theme"),
     search: Optional[str] = Query(None, description="Search in titles and content")
 ):
@@ -173,7 +292,7 @@ async def get_articles(
     total = await collection.count_documents(query)
     
     # Get articles with pagination
-    cursor = collection.find(query).skip(skip).limit(limit).sort("created_at", -1)
+    cursor = collection.find(query).sort("created_at", -1)
     articles = []
     async for article in cursor:
         articles.append(article_summary_helper(article))
@@ -181,10 +300,6 @@ async def get_articles(
     return ArticleListResponse(
         articles=articles,
         total=total,
-        skip=skip,
-        limit=limit,
-        has_next=skip + limit < total,
-        has_previous=skip > 0
     )
 
 @app.get("/articles/{article_id}", response_model=ArticleResponse)
