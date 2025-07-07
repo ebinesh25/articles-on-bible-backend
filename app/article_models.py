@@ -14,6 +14,10 @@ class Theme(str, Enum):
     BLUE = "blue"
     GREEN = "green"
     PURPLE = "purple"
+    YELLOW = "yellow"
+    LIGHT = "light"
+    RED = "red"
+    BROWN = "brown"
 
 class Language(str, Enum):
     TAMIL = "tamil"
